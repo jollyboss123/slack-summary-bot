@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 )
 
+// TODO: add caching for summary with channel id as key
+// TODO: restrict tokens use per call to openai to avoid abuse
 func main() {
 	logger := log.New(os.Stdout, "slack-bot: ", log.LstdFlags|log.Lshortfile)
 	err := godotenv.Load()
@@ -51,13 +55,17 @@ func main() {
 		slack.OptionLog(log.New(os.Stdout, "api: ", log.LstdFlags|log.Lshortfile)),
 	)
 
-	client := socketmode.New(
+	slackClient := socketmode.New(
 		api,
 		socketmode.OptionDebug(true),
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.LstdFlags|log.Lshortfile)),
 	)
 
-	socketmodeHandler := socketmode.NewSocketmodeHandler(client)
+	openaiClient := openai.NewClient(
+		option.WithAPIKey(os.Getenv("OPENAI_API_KEY")),
+	)
+
+	socketmodeHandler := socketmode.NewSocketmodeHandler(slackClient)
 
 	socketmodeHandler.HandleSlashCommand("/summarize", func(evt *socketmode.Event, clt *socketmode.Client) {
 		cmd, ok := evt.Data.(slack.SlashCommand)
@@ -76,13 +84,13 @@ func main() {
 		if cmd.Text == "" || cmd.Text == "--to-channel" {
 			clt.Ack(*evt.Request)
 
-			msg, err := getChannelHistory(api, cmd.ChannelID)
+			msg, err := getChannelSummary(api, openaiClient, cmd.ChannelID)
 			if err != nil {
-				logger.Printf("Error getting channel history: %v", err)
+				logger.Printf("Error getting channel summary: %v", err)
 				return
 			}
 
-			_, _, err = client.PostMessage(cmd.ChannelID, slack.MsgOptionText(strconv.Itoa(len(msg)), false))
+			_, _, err = clt.PostMessage(cmd.ChannelID, slack.MsgOptionText(msg, false))
 			if err != nil {
 				logger.Printf("Error posting message: %v", err)
 				return
@@ -91,14 +99,14 @@ func main() {
 		}
 
 		if cmd.Text == "--to-me" {
-			msg, err := getChannelHistory(api, cmd.ChannelID)
+			msg, err := getChannelSummary(api, openaiClient, cmd.ChannelID)
 			if err != nil {
-				logger.Printf("Error getting channel history: %v", err)
+				logger.Printf("Error getting channel summary: %v", err)
 				return
 			}
 
 			clt.Ack(*evt.Request, map[string]any{
-				"text": strconv.Itoa(len(msg)),
+				"text": msg,
 			})
 			return
 		}
@@ -121,6 +129,15 @@ func main() {
 	socketmodeHandler.RunEventLoop()
 }
 
+func getChannelSummary(sc *slack.Client, oac *openai.Client, channelID string) (string, error) {
+	history, err := getChannelHistory(sc, channelID)
+	if err != nil {
+		return "", err
+	}
+
+	return getSummary(oac, history, "Summarize the following Slack conversation:", "Make sure to keep it concise and professional.")
+}
+
 func getChannelHistory(api *slack.Client, channelID string) ([]slack.Message, error) {
 	history, err := api.GetConversationHistory(&slack.GetConversationHistoryParameters{
 		ChannelID: channelID,
@@ -130,5 +147,39 @@ func getChannelHistory(api *slack.Client, channelID string) ([]slack.Message, er
 	}
 
 	return history.Messages, nil
+}
 
+func getSummary(clt *openai.Client, messages []slack.Message, prePrompt, postPrompt string) (string, error) {
+	var chatMessages []openai.ChatCompletionMessageParamUnion
+
+	if prePrompt != "" {
+		chatMessages = append(chatMessages, openai.SystemMessage(
+			prePrompt,
+		))
+	}
+
+	for _, msg := range messages {
+		chatMessages = append(chatMessages, openai.UserMessage(
+			msg.Text,
+		))
+	}
+
+	if postPrompt != "" {
+		chatMessages = append(chatMessages, openai.SystemMessage(
+			postPrompt,
+		))
+	}
+
+	cc, err := clt.Chat.Completions.New(
+		context.TODO(),
+		openai.ChatCompletionNewParams{
+			Model:    openai.F(openai.ChatModelGPT4oMini),
+			Messages: openai.F(chatMessages),
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return cc.Choices[0].Message.Content, nil
 }
