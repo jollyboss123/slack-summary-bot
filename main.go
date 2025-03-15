@@ -15,6 +15,8 @@ import (
 
 // TODO: add caching for summary with channel id as key
 // TODO: restrict tokens use per call to openai to avoid abuse
+// TODO: fine tune prompt for better summarization
+// TODO: build evals and test data for better summarization
 func main() {
 	logger := log.New(os.Stdout, "slack-bot: ", log.LstdFlags|log.Lshortfile)
 	err := godotenv.Load()

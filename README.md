@@ -9,6 +9,12 @@ Slack Summary Bot is a Golang-based Slack bot that summarizes messages in a Slac
 - Supports custom pre-prompts and post-prompts
 - Uses Slack Socket Mode for seamless real-time interaction
 
+## Roadmap & Improvements
+- Caching summaries using the channel ID to reduce redundant API calls
+- Restricting token usage per OpenAI call to prevent excessive costs
+- Fine-tuning the prompt for better summarization accuracy
+- Building evaluations and test data to ensure consistent results
+
 ## Installation
 
 ### Prerequisites
