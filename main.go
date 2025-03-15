@@ -56,10 +56,23 @@ func main() {
 		socketmode.OptionLog(log.New(os.Stdout, "socketmode: ", log.LstdFlags|log.Lshortfile)),
 	)
 
-	channelId := "#test"
-	_, _, err = client.PostMessage(channelId, slack.MsgOptionText("Hello, world!", false))
-	if err != nil {
-		log.Fatal(err)
-		return
-	}
+	socketmodeHandler := socketmode.NewSocketmodeHandler(client)
+
+	socketmodeHandler.HandleSlashCommand("/summarize", func(evt *socketmode.Event, clt *socketmode.Client) {
+		cmd, ok := evt.Data.(slack.SlashCommand)
+		if !ok {
+			logger.Printf("Error converting event to Slash command: %+v", evt)
+			return
+		}
+
+		clt.Ack(*evt.Request)
+
+		_, _, err := client.PostMessage(cmd.ChannelID, slack.MsgOptionText("Hello, world!", false))
+		if err != nil {
+			logger.Printf("Error posting message: %v", err)
+			return
+		}
+	})
+
+	socketmodeHandler.RunEventLoop()
 }
