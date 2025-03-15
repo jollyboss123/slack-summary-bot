@@ -44,6 +44,8 @@ go run main.go
 
 ## Usage
 - Mention the bot in a Slack channel and use a slash command (e.g., `/summarize`)
+- Use the `--to-me` flag to receive the summary as a private message
+- Use the `--to-channel` flag to post the summary in the same channel
 - The bot fetches recent messages and generates a summary
 - Supports optional custom prompts before and after the summary
 
